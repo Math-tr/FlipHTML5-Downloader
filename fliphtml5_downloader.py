@@ -11,7 +11,19 @@ import base64
 import urllib.parse
 import zlib
 import asyncio
+import re
+from pathlib import Path
 
+def sanitize_filename(name):
+    # sadece harf, sayı, tire ve alt çizgi izin ver
+    name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+
+    # boş kalırsa varsayılan isim ver
+    if not name:
+        name = "output"
+
+    return name
+    
 # 1. Bağımlılık Kontrolü
 try:
     import requests
@@ -152,7 +164,7 @@ async def extract_via_playwright(book_id, STRINGS):
     pages = []
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
+        browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
 
         await page.add_init_script("""
@@ -288,8 +300,14 @@ def main():
     print(STRINGS["instructions_line1"])
     print(STRINGS["instructions_line2"])
 
+    import re
+
     book_id = input(STRINGS["prompt_book_id"]).strip()
-    if '/' not in book_id or len(book_id.split('/')) != 2: print(STRINGS["warn_id_format"])
+
+    if not re.match(r'^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$', book_id):
+        raise ValueError("Invalid Book ID format")
+    if '/' not in book_id or len(book_id.split('/')) != 2: 
+        print(STRINGS["warn_id_format"])
 
     all_pages = []
     
@@ -378,8 +396,19 @@ def main():
 
     default_folder = book_id.replace('/', '-')
     folder_name = input(STRINGS["prompt_folder_name"].format(default_folder=default_folder)) or default_folder
+    folder_name = sanitize_filename(folder_name)
+
+    from pathlib import Path
+    base_dir = Path.cwd()
+    target_dir = (base_dir / folder_name).resolve()
+
+    if not str(target_dir).startswith(str(base_dir)):
+        raise ValueError("Invalid folder path")
+
     pdf_name = input(STRINGS["prompt_pdf_name"].format(folder_name=folder_name)) or f"{folder_name}.pdf"
-    skip_existing = input(STRINGS["prompt_skip_existing"]).lower().startswith(STRINGS["skip_yes"])
+    
+    skip_existing_input = input(STRINGS["prompt_skip_existing"]).lower().strip()
+    skip_existing = skip_existing_input == STRINGS["skip_yes"]
 
     os.makedirs(folder_name, exist_ok=True)
 
